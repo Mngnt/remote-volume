@@ -45,6 +45,7 @@ The whole app is ES modules. The exception is `renderer.js`, which is the Common
   - That refresh pushes the resulting state to **all** clients right after an action. Without it, Companion only saw its own changes when polling was on.
   - `last` holds what clients were last told, so refreshes and polls only broadcast fields that changed.
   - Polling is a chained `setTimeout`, so ticks never overlap.
+  - Actions run one at a time (`enqueue`), so the steps of a fast rotary turn each read the volume the previous step set. The `after` refresh only runs once no more actions are waiting, and concurrent refreshes are coalesced. Each app refresh reads the full session list, and running one after every step made per-app rotary control lag.
 - **`volumeController.js`**: the platform facade.
   - Picks a backend in `impl/` by `os.type()`, clamps values, and implements toggle and increase/decrease on top of each backend.
   - Per-app functions take a target `{app}` or `{pid}`. They group backend sessions into apps with `apps.js` (by normalized process name), then apply changes to every session of the app.

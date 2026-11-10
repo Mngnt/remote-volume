@@ -110,6 +110,15 @@ export async function listSessions() {
 	return apps.map(({ pid, name, title, volume, muted, active }) => ({ id: pid, pid, name, title, volume, muted, active }))
 }
 
+// Several sessions in one helper command (one pass over the audio sessions).
+export async function setSessionsVolume(ids, value) {
+	await helper.request(`app-volume ${ids.join(',')} ${value}`)
+}
+
+export async function setSessionsMuted(ids, muted) {
+	await helper.request(`app-mute ${ids.join(',')} ${muted ? 1 : 0}`)
+}
+
 export async function setSessionVolume(id, value) {
 	await helper.request(`app-volume ${id} ${value}`)
 }

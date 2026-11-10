@@ -120,11 +120,14 @@ async function resolveApp(target) {
 	return group
 }
 
+// Backends that can change several sessions in one call (setSessionsVolume/-Muted) do so.
 async function applyVolume(group, value) {
+	if (impl.setSessionsVolume) return impl.setSessionsVolume(group.ids, clamp(value))
 	for (const id of group.ids) await impl.setSessionVolume(id, clamp(value))
 }
 
 async function applyMuted(group, muted) {
+	if (impl.setSessionsMuted) return impl.setSessionsMuted(group.ids, muted)
 	for (const id of group.ids) await impl.setSessionMuted(id, muted)
 }
 

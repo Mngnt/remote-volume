@@ -237,6 +237,32 @@ test('per-app requests on an unsupported platform return an error', async () => 
 	assert.deepEqual(client.messages.filter(isApps), [])
 })
 
+test('a burst of relative app steps (rotary encoder) loses no steps and coalesces refreshes', async () => {
+	await client.next(isApps)
+	// Like the real backend: read the volume, wait for the system, then write it.
+	controller.decreaseAppVolume = async (t, v) => {
+		const top = Math.max(...controller.sessions.filter((s) => s.name === 'Spotify').map((s) => s.volume))
+		await new Promise((r) => setTimeout(r, 5))
+		controller.sessions.filter((s) => s.name === 'Spotify').forEach((s) => (s.volume = top - v))
+	}
+	let listCalls = 0
+	const listApps = controller.listApps
+	controller.listApps = async () => {
+		listCalls++
+		await new Promise((r) => setTimeout(r, 5))
+		return listApps()
+	}
+	for (let i = 0; i < 10; i++) client.send({ action: 'decreaseAppVolume', app: 'spotify', value: 5 })
+	let spotify
+	while (spotify !== 30) {
+		const { apps } = await client.next(isApps)
+		spotify = apps.find((a) => a.name === 'Spotify').volume
+		assert.ok(spotify >= 30, `went past the target: ${spotify}`)
+	}
+	assert.equal(controller.sessions[0].volume, 30, '80 - 10 x 5')
+	assert.ok(listCalls < 10, `expected coalesced refreshes, got ${listCalls} app list reads`)
+})
+
 test('polling broadcasts external changes, and only the fields that changed', async () => {
 	await client.next(isMaster)
 	await client.next(isApps)

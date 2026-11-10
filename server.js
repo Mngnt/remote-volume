@@ -82,15 +82,42 @@ export function createRemoteVolumeServer({ controller, log = console, port, poll
 		}
 	}
 
+	// Refreshes that are requested while one is running are merged into a single follow-up
+	// refresh, so a burst of actions (e.g. turning a rotary encoder) doesn't queue one full
+	// app list read per action in front of the next action.
+	function coalesce(refresh) {
+		let running = null
+		let again = false
+		return function coalesced() {
+			if (running) {
+				again = true
+				return running
+			}
+			running = (async () => {
+				try {
+					do {
+						again = false
+						await refresh()
+					} while (again)
+				} finally {
+					running = null
+				}
+			})()
+			return running
+		}
+	}
+	const refreshMasterSoon = coalesce(refreshMaster)
+	const refreshAppsSoon = coalesce(refreshApps)
+
 	async function poll() {
 		try {
-			await refreshMaster()
+			await refreshMasterSoon()
 			delete lastErrors.master
 		} catch (error) {
 			logOnce('master', error)
 		}
 		try {
-			await refreshApps()
+			await refreshAppsSoon()
 			delete lastErrors.apps
 		} catch (error) {
 			logOnce('apps', error)
@@ -108,8 +135,19 @@ export function createRemoteVolumeServer({ controller, log = console, port, poll
 		}, pollingConfig.interval)
 	}
 
-	const masterAction = (run) => ({ run, after: refreshMaster })
-	const appAction = (run) => ({ run, after: refreshApps })
+	const masterAction = (run) => ({ run, after: refreshMasterSoon })
+	const appAction = (run) => ({ run, after: refreshAppsSoon })
+
+	// Actions run one at a time, in the order they arrive. Run concurrently, each step of a
+	// fast rotary turn read the volume before the previous step had set it, losing steps.
+	let actionQueue = Promise.resolve()
+	let pendingActions = 0
+	const staleRefreshes = new Set() // refreshMasterSoon / refreshAppsSoon still owed to clients
+	function enqueue(run) {
+		const result = actionQueue.then(run)
+		actionQueue = result.catch(() => {})
+		return result
+	}
 
 	const actions = {
 		// --- master volume (used by Companion) ---
@@ -151,19 +189,30 @@ export function createRemoteVolumeServer({ controller, log = console, port, poll
 			return send(ws, { action, response: { error: 'Invalid action' } })
 		}
 
+		pendingActions++
 		try {
-			await handler.run(message, ws)
+			await enqueue(() => handler.run(message, ws))
+			if (handler.after) staleRefreshes.add(handler.after)
 		} catch (error) {
 			if (!(error instanceof RequestError) && !error?.isClientError) log.error(`Error handling ${action}:`, error)
-			return send(ws, { action, response: { error: error.message } })
+			send(ws, { action, response: { error: error.message } })
+		} finally {
+			pendingActions--
 		}
 
 		// Push the resulting state to every client straight away. Without this, clients (Companion
-		// included) only learned about their own changes when polling was enabled.
-		try {
-			await handler.after?.()
-		} catch (error) {
-			log.error(`Error refreshing state after ${action}:`, error)
+		// included) only learned about their own changes when polling was enabled. While more
+		// actions are waiting, the last of them does it: each refresh reads the full app list,
+		// which would otherwise delay every step of a rotary turn.
+		if (pendingActions > 0) return
+		const refreshes = [...staleRefreshes]
+		staleRefreshes.clear()
+		for (const refresh of refreshes) {
+			try {
+				await refresh()
+			} catch (error) {
+				log.error(`Error refreshing state after ${action}:`, error)
+			}
 		}
 	}
 

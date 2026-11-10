@@ -8,8 +8,9 @@
 //   set-volume <0-100>       -> same as get, after applying
 //   set-mute <0|1>           -> same as get, after applying
 //   apps                     -> {"apps":[{"pid":1234,"name":"Spotify","title":"Spotify","volume":100,"muted":false,"active":true,"device":"Speakers"}]}
-//   app-volume <pid> <0-100> -> {"ok":true,"count":<sessions changed>}
-//   app-mute <pid> <0|1>     -> {"ok":true,"count":<sessions changed>}
+//   app-volume <pids> <0-100> -> {"ok":true,"count":<sessions changed>}
+//   app-mute <pids> <0|1>     -> {"ok":true,"count":<sessions changed>}
+//   (<pids> is one process id, or several separated by commas: "1234,5678")
 //   ping                     -> {"ok":true}
 // Errors are reported as {"error":"message"}.
 //
@@ -172,6 +173,17 @@ namespace RemoteVolume
 		[DllImport("ole32.dll")]
 		static extern int PropVariantClear(ref PropVariant pvar);
 
+		const int PROCESS_QUERY_LIMITED_INFORMATION = 0x1000;
+
+		[DllImport("kernel32.dll", SetLastError = true)]
+		static extern IntPtr OpenProcess(int access, bool inheritHandle, uint pid);
+
+		[DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+		static extern bool QueryFullProcessImageName(IntPtr process, int flags, StringBuilder name, ref int size);
+
+		[DllImport("kernel32.dll")]
+		static extern bool CloseHandle(IntPtr handle);
+
 		[MTAThread]
 		static int Main()
 		{
@@ -237,7 +249,7 @@ namespace RemoteVolume
 					{
 						RequireArgs(args, 3);
 						float level = ParsePercent(args[2]) / 100f;
-						int count = ForEachSessionOf(ParsePid(args[1]), delegate (Session s)
+						int count = ForEachSessionOf(ParsePids(args[1]), delegate (Session s)
 						{
 							s.Volume.SetMasterVolume(level, ref EventContext);
 						});
@@ -247,7 +259,7 @@ namespace RemoteVolume
 					{
 						RequireArgs(args, 3);
 						bool mute = ParseBool(args[2]);
-						int count = ForEachSessionOf(ParsePid(args[1]), delegate (Session s)
+						int count = ForEachSessionOf(ParsePids(args[1]), delegate (Session s)
 						{
 							s.Volume.SetMute(mute, ref EventContext);
 						});
@@ -401,12 +413,13 @@ namespace RemoteVolume
 			}
 		}
 
-		static int ForEachSessionOf(uint pid, Action<Session> action)
+		// Visits the sessions of any of the given processes, in a single pass over the devices.
+		static int ForEachSessionOf(HashSet<uint> pids, Action<Session> action)
 		{
 			int count = 0;
 			ForEachSession(delegate (Session s)
 			{
-				if (s.Pid != pid) return;
+				if (!pids.Contains(s.Pid)) return;
 				action(s);
 				count++;
 			});
@@ -441,44 +454,67 @@ namespace RemoteVolume
 			return sb.Append("]}").ToString();
 		}
 
+		// Full path of a process's executable, or null if it no longer exists or can't be opened.
+		// One kernel call, unlike Process.GetProcessById(..).ProcessName, which snapshots every
+		// process on the system and made each "apps" command take ~100 ms.
+		static string ImagePath(uint pid)
+		{
+			IntPtr handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid);
+			if (handle == IntPtr.Zero) return null;
+			try
+			{
+				var sb = new StringBuilder(1024);
+				int size = sb.Capacity;
+				return QueryFullProcessImageName(handle, 0, sb, ref size) ? sb.ToString(0, size) : null;
+			}
+			finally
+			{
+				CloseHandle(handle);
+			}
+		}
+
 		// Returns { processName, displayTitle }, or null if the process no longer exists.
+		// Cached per pid and image path, so a reused pid is looked up again.
 		static string[] ProcessInfo(Session s)
 		{
 			if (s.IsSystemSounds) return new[] { "System Sounds", "System Sounds" };
 
-			string name;
-			try
+			string path = ImagePath(s.Pid);
+			string name = path != null ? Path.GetFileNameWithoutExtension(path) : null;
+			if (name == null)
 			{
-				using (var p = Process.GetProcessById((int)s.Pid)) name = p.ProcessName;
-			}
-			catch
-			{
-				processInfoCache.Remove(s.Pid);
-				return null;
-			}
-
-			string[] cached;
-			if (processInfoCache.TryGetValue(s.Pid, out cached) && cached[0] == name) return cached;
-
-			string title = null;
-			if (!string.IsNullOrEmpty(s.DisplayName) && !s.DisplayName.StartsWith("@")) title = s.DisplayName;
-			if (title == null)
-			{
+				// Fallback for processes that can't be opened with limited rights.
 				try
 				{
-					using (var p = Process.GetProcessById((int)s.Pid))
-					{
-						string description = p.MainModule.FileVersionInfo.FileDescription;
-						if (!string.IsNullOrWhiteSpace(description)) title = description.Trim();
-					}
+					using (var p = Process.GetProcessById((int)s.Pid)) name = p.ProcessName;
 				}
 				catch
 				{
-					// Access denied for elevated or protected processes; fall back to the process name.
+					processInfoCache.Remove(s.Pid);
+					return null;
+				}
+			}
+			string key = path ?? name;
+
+			string[] cached;
+			if (processInfoCache.TryGetValue(s.Pid, out cached) && cached[2] == key) return cached;
+
+			string title = null;
+			if (!string.IsNullOrEmpty(s.DisplayName) && !s.DisplayName.StartsWith("@")) title = s.DisplayName;
+			if (title == null && path != null)
+			{
+				try
+				{
+					string description = FileVersionInfo.GetVersionInfo(path).FileDescription;
+					if (!string.IsNullOrWhiteSpace(description)) title = description.Trim();
+				}
+				catch
+				{
+					// No version resource or no access; fall back to the process name.
 				}
 			}
 
-			var result = new[] { name, title ?? name };
+			var result = new[] { name, title ?? name, key };
 			processInfoCache[s.Pid] = result;
 			return result;
 		}
@@ -505,12 +541,18 @@ namespace RemoteVolume
 			throw new ArgumentException("Expected 0 or 1");
 		}
 
-		static uint ParsePid(string s)
+		// One pid, or several separated by commas.
+		static HashSet<uint> ParsePids(string s)
 		{
-			uint pid;
-			if (!uint.TryParse(s, NumberStyles.None, CultureInfo.InvariantCulture, out pid))
-				throw new ArgumentException("Invalid process id");
-			return pid;
+			var pids = new HashSet<uint>();
+			foreach (string part in s.Split(','))
+			{
+				uint pid;
+				if (!uint.TryParse(part, NumberStyles.None, CultureInfo.InvariantCulture, out pid))
+					throw new ArgumentException("Invalid process id");
+				pids.Add(pid);
+			}
+			return pids;
 		}
 
 		static string Percent(float level)
