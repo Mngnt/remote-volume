@@ -46,13 +46,14 @@
 		"win": {
 			"target": [
 				{
-					"target": "nsis",
+					"target": "zip",
 					"arch": [
 						"x64"
 					]
 				}
 			],
-			"icon": "icon.png"
+			"icon": "icon.png",
+			"artifactName": "RemoteVolume-${version}-win-${arch}.zip"
 		},
 		"linux": {
 			"target": [

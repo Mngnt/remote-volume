@@ -67,7 +67,7 @@ jobs:
           name: build-artifacts-${{ matrix.os }}
           path: |
             dist/*.dmg
-            dist/*.exe
+            dist/*.zip
             dist/*.deb
           if-no-files-found: warn
 
@@ -111,7 +111,7 @@ jobs:
         with:
           files: |
             dist/*.dmg
-            dist/*.exe
+            dist/*.zip
             dist/*.deb
           tag_name: v${{ env.version }}-${{ env.SHORT_SHA }}
           name: 'Release v${{ env.version }}-[${{ env.SHORT_SHA }}]'

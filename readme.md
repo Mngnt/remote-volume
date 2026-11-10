@@ -16,8 +16,8 @@ As soon as something changes, the updated values will be sent out to all connect
 
 ## Supported OS
 
-- Windows Vista or later
-- OSX on Arm & x64
+- Windows 10 or later (x64)
+- macOS 10.15 or later on Arm & x64
 - Linux\*
 
 \*No autostart possible by the software setting - needs to be solved manually!
@@ -26,12 +26,19 @@ Per-application volume works on Windows (the same apps as the Windows Volume Mix
 
 ## Installation
 
-Navigate to the [latest release](https://github.com/Mngnt/remote-volume/releases/latest) and download the corresponding file for your OS. Mac OS users will find a .dmg volume, containing the application. Windows users will find a .exe file which contains an installer.
-Linux users will find a .deb file for installation.
+Navigate to the [latest release](https://github.com/Mngnt/remote-volume/releases/latest) and download the corresponding file for your OS. Mac OS users will find a .dmg volume, containing the application. Linux users will find a .deb file for installation.
+
+On Windows, download the `RemoteVolume-<version>-win-x64.zip` file and extract it to a folder of your choice. There is no installer and no admin rights are needed. Start the app with `Remote Volume.exe` inside that folder. To uninstall, turn off **Run on Startup**, quit the app from the tray and delete the folder.
+
+The Windows build isn't code-signed, so on first launch Windows SmartScreen may show "Windows protected your PC". Click **More info** → **Run anyway**. Alternatively, before extracting, right-click the zip → **Properties** → tick **Unblock** → **OK**, and no prompt will appear.
+
+To update on Windows, quit the app from the tray, then replace the folder's contents with the new zip's contents. Your settings are kept, because they're stored in your user profile, not in the app folder. If you enabled **Run on Startup** and then move the folder, start the app once from the new location to update the startup entry.
+
+If you previously installed the app with the old Windows `.exe` installer, uninstall it from **Settings** → **Apps** first; your settings carry over to the zip version.
 
 ## Setup
 
-After installing the application, it runs as a menu bar (tray) application. Click the menu bar item to open the configuration screen or quit the application. Closing the configuration window only hides it, and launching the application again while it is running opens the configuration window instead of starting a second copy.
+Once installed (or extracted, on Windows), the application runs as a menu bar (tray) application. Click the menu bar item to open the configuration screen or quit the application. Closing the configuration window only hides it, and launching the application again while it is running opens the configuration window instead of starting a second copy.
 
 Inside the configuration screen, you can
 
@@ -202,7 +209,7 @@ Requires Node.js 22 (the version used by CI).
 npm install            # the optional native dependency @capaj/naudiodon may fail to build; that's fine
 npm start              # on Windows this first compiles impl/windows/RemoteVolumeHelper.exe
 npm test               # protocol and parser tests; no Electron or audio hardware needed
-npm run build          # installer in dist/: .exe (Windows), .dmg (macOS), .deb (Linux)
+npm run build          # packages in dist/: portable .zip (Windows), .dmg (macOS), .deb (Linux)
 npm run build:helper   # force-rebuild the Windows helper
 ```
 

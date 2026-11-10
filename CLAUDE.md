@@ -14,7 +14,7 @@ npm start            # prestart compiles the Windows helper if needed, then runs
 npm test             # node --test: finds test/*.test.js; no Electron or audio hardware needed
 node --test test/server.test.js                  # a single test file
 node --test --test-name-pattern="isMuted"        # a single test by name
-npm run build        # electron-builder -> dist/ (nsis .exe on Windows, dmg on macOS, deb on Linux)
+npm run build        # electron-builder -> dist/ (portable zip on Windows, no installer; dmg on macOS; deb on Linux)
 npm run build:helper # force-rebuild impl/windows/RemoteVolumeHelper.exe
 ```
 
