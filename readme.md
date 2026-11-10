@@ -7,8 +7,11 @@ This small Electron application enables you to control the OS audio volume over 
 - Get, set, increase or decrease the audio volume
 - Get, mute, unmute or toggle the mute state of the audio volume
 - Get the current audio output device
+- Per-application volume: list apps that are playing audio, and set, increase, decrease, mute, unmute or toggle each one (Windows and Linux)
 
-The application has an built in feature to poll the system audio values (volume and mute state) - this can be enabled or disabled in the configuration window (you can also define a polling interval).
+Whenever a client changes the volume or mute state, the new values are sent to all connected WebSocket clients straight away.
+
+The application can also poll the system audio values (volume, mute state, output device and per-app volumes) to pick up changes made outside the app, e.g. with the keyboard or the OS mixer. Polling can be enabled or disabled in the configuration window, where you can also set the polling interval.
 As soon as something changes, the updated values will be sent out to all connected WebSocket clients.
 
 ## Supported OS
@@ -18,6 +21,8 @@ As soon as something changes, the updated values will be sent out to all connect
 - Linux\*
 
 \*No autostart possible by the software setting - needs to be solved manually!
+
+Per-application volume works on Windows (the same apps as the Windows Volume Mixer) and on Linux with PulseAudio or PipeWire (`pactl` must be installed). macOS has no system API for per-application volume, so those actions return an error there.
 
 ## Installation
 
@@ -56,7 +61,7 @@ When using [Bitfocus Companion](https://bitfocus.io/companion) you don't need th
 
 ### 2. Get State
 
-- **Action**: `g`
+- **Action**: `getState`
 - **Description**: Returns all current audio information
 - **Payload**:
   ```json
@@ -134,6 +139,63 @@ When using [Bitfocus Companion](https://bitfocus.io/companion) you don't need th
   	"action": "isMuted"
   }
   ```
+- **Response**: `{ "muted": <boolean> }`
+
+### Messages sent by the application
+
+- On connect, and in reply to `getState`: `{ "volume": <0-100>, "muted": <boolean>, "outputDevice": "<name>" }`
+- After a change (from a client action or from polling): only the fields that changed, e.g. `{ "volume": 35 }`
+- Errors: `{ "action": "<action>", "response": { "error": "<message>" } }`
+
+## Per-application volume
+
+Apps are identified by their process name (case-insensitive, with or without `.exe`, e.g. `"spotify"`), or by their display title (e.g. `"Google Chrome"`). Instead of `app` you can pass `pid` with the id of any of the app's processes. An app with several audio streams (e.g. a browser) is controlled as one.
+
+App information is always sent under an `apps` key, never as top-level `volume`/`muted` fields, so clients that only understand the master volume (such as the Bitfocus Companion module) are not affected.
+
+### List apps
+
+- **Action**: `getApps`
+- **Payload**:
+  ```json
+  { "action": "getApps" }
+  ```
+- **Response**:
+  ```json
+  {
+  	"apps": [
+  		{ "name": "Spotify", "title": "Spotify", "pids": [1234], "volume": 80, "muted": false, "active": true }
+  	]
+  }
+  ```
+  `volume` is the app's own level (0–100, relative to the master volume). `active` is true while the app is actually playing. The list is also sent on connect and whenever it changes after an app action or a poll.
+
+### Set, increase or decrease an app's volume
+
+- **Actions**: `setAppVolume` (value 0 - 100), `increaseAppVolume` / `decreaseAppVolume` (value 1 - 99)
+- **Payload**:
+  ```json
+  { "action": "setAppVolume", "app": "spotify", "value": 50 }
+  ```
+
+### Mute, unmute or toggle an app
+
+- **Actions**: `muteApp`, `unmuteApp`, `toggleAppMute`
+- **Payload**:
+  ```json
+  { "action": "toggleAppMute", "app": "chrome" }
+  ```
+
+If no running app matches, the reply is an error such as `{ "action": "muteApp", "response": { "error": "No app with an audio session matches \"chrome\"" } }`.
+
+## Development
+
+```bash
+npm install
+npm start      # on Windows this first compiles impl/windows/RemoteVolumeHelper.exe
+npm test
+npm run build
+```
 
 ## Credits
 

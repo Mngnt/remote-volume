@@ -14,8 +14,8 @@
 				display: flex;
 				justify-content: center;
 				align-items: center;
-				height: 100vh;
-				overflow: hidden;
+				min-height: 100vh;
+				overflow-y: auto;
 			}
 
 			.container {
@@ -85,6 +85,17 @@
 				background-color: #444444;
 			}
 
+			#status {
+				min-height: 1.4em;
+				margin-top: 12px;
+				font-size: 14px;
+				color: #8fd18f;
+			}
+
+			#status.error {
+				color: #ff8a80;
+			}
+
 			footer {
 				margin-top: 20px;
 				font-size: 14px;
@@ -118,6 +129,7 @@
 			<input type="number" id="pollingInterval" value="1000" min="100" max="10000" disabled />
 			<br />
 			<button id="save">Save</button>
+			<div id="status" role="status"></div>
 
 			<footer>
 				Software licensed under the MIT License.<br />
@@ -132,6 +144,15 @@
 				document.getElementById('enablePolling').checked = config.polling.enabled
 				document.getElementById('pollingInterval').value = config.polling.interval
 				document.getElementById('pollingInterval').disabled = !config.polling.enabled
+			})
+
+			let statusTimer = null
+			window.electron.receive('config-saved', ({ ok, message }) => {
+				const status = document.getElementById('status')
+				clearTimeout(statusTimer)
+				status.textContent = message
+				status.classList.toggle('error', !ok)
+				if (ok && message) statusTimer = setTimeout(() => (status.textContent = ''), 3000)
 			})
 
 			const saveConfig = () => {

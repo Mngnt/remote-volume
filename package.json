@@ -8,12 +8,27 @@
 	"keywords": [],
 	"scripts": {
 		"start": "electron .",
-		"build": "electron-builder"
+		"prestart": "node scripts/build-win-helper.js",
+		"build": "electron-builder",
+		"prebuild": "node scripts/build-win-helper.js",
+		"build:helper": "node scripts/build-win-helper.js --force",
+		"test": "node --test"
 	},
 	"build": {
 		"appId": "com.utsgmbh.volumeremote",
 		"productName": "Remote Volume",
 		"publish": null,
+		"files": [
+			"**/*",
+			"!test/**",
+			"!docs/**",
+			"!scripts/**",
+			"!impl/windows/*.cs",
+			"!CLAUDE.md"
+		],
+		"asarUnpack": [
+			"impl/windows/*.exe"
+		],
 		"mac": {
 			"notarize": false,
 			"target": [
@@ -55,21 +70,18 @@
 	"author": "Ultimate Technology Solutions GmbH <info@ultimate-technology.de>",
 	"license": "MIT",
 	"dependencies": {
-		"@capaj/naudiodon": "^2.4.0",
-		"auto-launch": "^5.0.6",
 		"electron-auto-launch": "^5.0.7",
 		"electron-log": "^5.2.0",
 		"electron-store": "^10.0.0",
 		"execa": "4.0.3",
-		"os": "^0.1.2",
 		"ws": "^8.18.0"
 	},
 	"devDependencies": {
+		"@electron/notarize": "^2.5.0",
 		"electron": "^33.0.2",
-		"electron-builder": "^25.1.8",
-		"electron-notarize": "^1.2.2",
-		"electron-rebuild": "^3.2.9",
-		"mocha": "^8.1.1",
-		"standard": "^14.3.4"
+		"electron-builder": "^25.1.8"
+	},
+	"optionalDependencies": {
+		"@capaj/naudiodon": "^2.4.0"
 	}
 }
